@@ -1567,6 +1567,7 @@ var
   version: integer;
   i: integer;
   m: TMemoryStream;
+  mytemptemp: TTraceDebugInfo;
 begin
   if opendialog1.execute then
   begin
@@ -1598,11 +1599,17 @@ begin
       dereference:=false;
       for i:=0 to lvTracer.Items.Count-1 do
       begin
-        lvTracer.Items[i].Data:=TTraceDebugInfo.createFromStream(f);
+        mytemptemp := TTraceDebugInfo.createFromStream(f);
+        lvTracer.Items[i].Data:=mytemptemp;
         if not dereference and (TTraceDebugInfo(lvTracer.Items[i].Data).bytesize>0) then
           dereference:=true;
       end;
 
+      //在这里读取了trace文件
+      //luaclass_newClass(GetLuaState(), lvTracer);
+      mytemptemp:= TTraceDebugInfo(lvTracer.Items[1].Data);
+      lua_pushlightuserdata(GetLuaState(),@mytemptemp.c);
+      lua_setglobal(GetLuaState(),'CETraceView');
 
 
       miOpenTraceForCompare.Enabled:=true;

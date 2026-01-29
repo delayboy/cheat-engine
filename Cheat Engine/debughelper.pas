@@ -852,7 +852,7 @@ end;
 
 begin
   //issue: If a breakpoint is being handled and this is called, dr6 gets reset to 0 in windows 7, making it impossible to figure out what caused the breakpoint
-
+  ChangeRegOnBP(breakpoint^.address,0);
   if breakpoint^.markedfordeletion then exit;
 
   if CurrentDebuggerInterface is TDBVMDebugInterface then
@@ -1013,7 +1013,8 @@ begin
        // outputdebugstring(PChar('clearmask=' + inttohex(clearmask, 8)));
 
         breakpoint^.active := True;
-
+        if (CurrentDebuggerInterface is TKernelDebugInterface) then        //我修改的部分：向CE驱动提交断点callback
+          DBKDebug_GD_SetBreakpoint(true, breakpoint.debugregister, breakpoint.address, BreakPointTriggerToBreakType(breakpoint.breakpointTrigger), SizeToBreakLength(breakpoint.size));
         {$ifdef windows}
         if (CurrentDebuggerInterface is TKernelDebugInterface) and globaldebug then
         begin
@@ -1287,6 +1288,8 @@ begin
 
     Debugregistermask := $F shl (16 + 4 * breakpoint.debugRegister) + (3 shl (breakpoint.debugregister * 2));
     Debugregistermask := not Debugregistermask; //inverse the bits
+    if (CurrentDebuggerInterface is TKernelDebugInterface) then        //我修改的部分：向CE驱动提交断点callback
+        DBKDebug_GD_SetBreakpoint(false, breakpoint.debugregister, breakpoint.address, BreakPointTriggerToBreakType(breakpoint.breakpointTrigger), SizeToBreakLength(breakpoint.size));
 
 
     {$ifdef windows}
@@ -1512,7 +1515,7 @@ begin
     dbvm_watch_delete(breakpoint^.dbvmwatchid);
 
   breakpoint^.active := false;
-
+  ChangeRegOnBP(breakpoint^.address,1);
 end;
 
 procedure TDebuggerThread.RemoveBreakpoint(breakpoint: PBreakpoint);
@@ -3354,7 +3357,7 @@ begin
   defaultconstructorcode;
 
 
-  if not (dbcBreakOnEntry in CurrentDebuggerInterface.DebuggerCapabilities) then
+  if not (dbcBreakOnEntry in CurrentDebuggerInterface.DebuggerCapabilities) then //不支持在OEP断点
   begin
     MessageDlg(Format(rsThisDebuggerInterfaceDoesnTSupportBreakOnEntryYet, [CurrentDebuggerInterface.name]), mtError, [mbok], 0);
     terminate;

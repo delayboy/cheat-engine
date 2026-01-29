@@ -9,12 +9,12 @@
       </Flags>
       <SessionStorage Value="InProjectDir"/>
       <AutoCreateForms Value="False"/>
-      <Title Value="Cheat Engine 7.5"/>
+      <Title Value="VT Engine 7.5"/>
       <UseXPManifest Value="True"/>
       <XPManifest>
         <DpiAware Value="True"/>
         <ExecutionLevel Value="highestAvailable"/>
-        <TextName Value="Cheat Engine"/>
+        <TextName Value="VT Engine"/>
         <TextDesc Value="Scripting language and tools"/>
       </XPManifest>
       <Icon Value="0"/>
@@ -28,10 +28,10 @@
       <AutoIncrementBuild Value="True"/>
       <MajorVersionNr Value="7"/>
       <MinorVersionNr Value="5"/>
-      <BuildNr Value="7431"/>
+      <BuildNr Value="7457"/>
       <Language Value="041C"/>
       <CharSet Value="04B0"/>
-      <StringTable CompanyName="Cheat Engine" FileDescription="Cheat Engine" ProductVersion="7.5"/>
+      <StringTable CompanyName="VT Engine" FileDescription="VT Engine" ProductVersion="7.5"/>
     </VersionInfo>
     <BuildModes Count="10">
       <Item1 Name="Release 32-Bit" Default="True"/>
@@ -347,6 +347,7 @@
           <Linking>
             <Debugging>
               <DebugInfoType Value="dsDwarf2Set"/>
+              <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <Options>
               <Win32>
@@ -372,28 +373,6 @@
 -dCUSTOMFLOAT
 -dNESTEDSTRUCTURES
 -doverflowdebug"/>
-            <OtherDefines Count="20">
-              <Define0 Value="NOTMULTITHREADED"/>
-              <Define1 Value="benchmarkps"/>
-              <Define2 Value="cemain"/>
-              <Define3 Value="NDEBUG"/>
-              <Define4 Value="D3DDebug"/>
-              <Define5 Value="NOVMX"/>
-              <Define6 Value="CUSTOMFLOAT"/>
-              <Define7 Value="XDEBUG"/>
-              <Define8 Value="memleaksearch"/>
-              <Define9 Value="checkassembleralphabet"/>
-              <Define10 Value="memorymapped"/>
-              <Define11 Value="privatebuild"/>
-              <Define12 Value="DBVMFORAMDISWORKING"/>
-              <Define13 Value="NESTEDSTRUCTURES"/>
-              <Define14 Value="THREADNAMESUPPORT"/>
-              <Define15 Value="LINUXTCCTEST"/>
-              <Define16 Value="asserthexviewisthreadsafe"/>
-              <Define17 Value="DEBUGPROTOCOL"/>
-              <Define18 Value="NEWCHANGEREGONX86"/>
-              <Define19 Value="overflowdebug"/>
-            </OtherDefines>
           </Other>
         </CompilerOptions>
       </Item6>
@@ -2996,6 +2975,7 @@
     </CodeGeneration>
     <Linking>
       <Debugging>
+        <DebugInfoType Value="dsDwarf2Set"/>
         <StripSymbols Value="True"/>
         <UseExternalDbgSyms Value="True"/>
       </Debugging>

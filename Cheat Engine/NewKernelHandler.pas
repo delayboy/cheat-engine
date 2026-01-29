@@ -527,7 +527,7 @@ type PDebuggerstate=^TDebuggerstate;
 type TBreakType=(bt_OnInstruction=0,bt_OnWrites=1, bt_OnIOAccess=2, bt_OnReadsAndWrites=3);
 type TBreakLength=(bl_1byte=0, bl_2byte=1, bl_8byte=2{Only when in 64-bit}, bl_4byte=3);
 {$ifdef windows}
-
+type TChangeRegOnBP= function (address: ptrUint;remove: DWORD): DWORD;
 
 type TEnumDeviceDrivers=function(lpImageBase: LPLPVOID; cb: DWORD; var lpcbNeeded: DWORD): BOOL; stdcall;
 type TGetDeviceDriverBaseNameA=function(ImageBase: LPVOID; lpBaseName: LPSTR; nSize: DWORD): DWORD; stdcall;
@@ -720,7 +720,7 @@ function Is64BitProcess(processhandle: THandle): boolean;
 
 
 //I could of course have made it a parameter thing, but I'm lazy
-
+function ChangeRegOnBP2(address: ptrUint;remove: DWORD): DWORD;
 
 function WriteProcessMemory(hProcess: THandle; const lpBaseAddress: Pointer; lpBuffer: Pointer; nSize: DWORD; var lpNumberOfBytesWritten: PTRUINT): BOOL; stdcall;
 function ReadProcessMemory(hProcess: THandle; lpBaseAddress, lpBuffer: Pointer; nSize: size_t; var lpNumberOfBytesRead: PTRUINT): BOOL; stdcall;
@@ -770,7 +770,7 @@ var
   {$ifdef windows}
   Wow64GetThreadContext      :TWow64GetThreadContext;
   Wow64SetThreadContext      :TWow64SetThreadContext;
-
+  ChangeRegOnBP: TChangeRegOnBP;
 
   {$ifdef cpu64}
   GetThreadSelectorEntry: TGetThreadSelectorEntry;
@@ -977,7 +977,10 @@ resourcestring
   rsDBVMIsNotLoadedThisFeatureIsNotUsable = 'DBVM is not loaded. This feature is not usable';
 
  {$ifndef JNI}
-
+ function ChangeRegOnBP2(address: ptrUint;remove: DWORD):DWORD;
+ begin
+   result:= remove;
+ end;
 
 function verifyAddress(a: qword): boolean; inline;
 begin
@@ -2282,7 +2285,8 @@ procedure OutputDebugString(msg: string);
 begin
 {$ifndef NoODS}
   {$ifdef windows}
-    windows.outputdebugstring(pchar(msg));
+    //windows.outputdebugstring(pchar(msg));
+    //将OutputDebugString重新定义为什么都不做
   {$endif}
 
   {$ifdef android}
@@ -2403,7 +2407,7 @@ initialization
   ModuleList:= nil;
   Denylist:= false;
   //globaldenylist:= false;
-
+  ChangeRegOnBP := @ChangeRegOnBP2;
 
 
 

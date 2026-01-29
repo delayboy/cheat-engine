@@ -456,7 +456,7 @@ begin
 
     end;
 
-    if (CurrentDebuggerInterface is TNetworkDebuggerInterface) then
+    if (CurrentDebuggerInterface is TNetworkDebuggerInterface) then 
     begin
       if lastcontext<>nil then
         FreeMemAndNil(lastcontext);
@@ -2207,6 +2207,8 @@ begin
 
     if {$ifdef windows} (CurrentDebuggerInterface is TKernelDebugInterface) or {$endif}
        (CurrentDebuggerInterface is TNetworkDebuggerInterface) then //the kerneldebuginterface and networkdebuginterface do not give a breakpoint as init so use create as attachevent
+      onAttachEvent.SetEvent;
+    if (DWORD(debugEvent.CreateProcessInfo.lpBaseOfImage)=$123456) then
       onAttachEvent.SetEvent;
 
     {$ifdef windows}

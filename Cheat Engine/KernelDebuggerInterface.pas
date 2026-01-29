@@ -40,17 +40,11 @@ type
   private
     pid: DWORD;
     currentdebuggerstate: TDebuggerstate;
-
-    injectedEvents: Tqueue;
     injectedEventsCS: TcriticalSection;
+    injectedEvents: Tqueue;
     threadpoller: TThreadPoller;
     NeedsToContinue: boolean;
     globalDebug: boolean;
-    fisInjectedEvent: boolean;
-    currentthread: THandle;
-
-    threads: TMap;
-    procedure injectEvent(e: pointer);
   public
     function WaitForDebugEvent(var lpDebugEvent: TDebugEvent; dwMilliseconds: DWORD): BOOL; override;
     function ContinueDebugEvent(dwProcessId: DWORD; dwThreadId: DWORD; dwContinueStatus: DWORD): BOOL; override;
@@ -60,11 +54,9 @@ type
     function GetLastBranchRecords(lbr: pointer): integer; override;
     function canReportExactDebugRegisterTrigger: boolean; override;
 
-
+    procedure injectEvent(e: pointer);
     function DebugActiveProcess(dwProcessId: DWORD): WINBOOL; override;
     function EventCausedByDBVM: boolean;
-
-    function isInjectedEvent: boolean; override;
 
     destructor destroy; override;
     constructor create(globalDebug, canStepKernelcode: boolean);
@@ -89,8 +81,9 @@ begin
   ie.eventType:=etCreateThread;
   ie.threadid:=threadid;
   ie.processid:=pid;
-
+  OutputDebugString('BENSON CreateThreadEvent');
   di.injectEvent(ie);
+  OutputDebugString('BENSON CreateThreadEvent OVER');
 end;
 
 procedure TThreadPoller.DestroyThreadEvent(threadid: dword);
@@ -100,8 +93,9 @@ begin
   ie.eventType:=etDestroyThread;
   ie.threadid:=threadid;
   ie.processid:=pid;
-
+  OutputDebugString('BENSON DestroyThreadEvent');
   di.injectEvent(ie);
+  OutputDebugString('BENSON DestroyThreadEvent OVER');
 end;
 
 
@@ -136,7 +130,7 @@ i: integer;
 begin
   newlist:=tlist.create;
   GetCurrentList(newlist);
-
+  OutputDebugString('BENSON UpdateList');
   //now try to find the differences
 
   //is there a threadid that's not in the current threadlist?
@@ -149,25 +143,30 @@ begin
       DestroyThreadEvent(ptrUint(threadlist[i]));
 
   //free the old list and make the new list the current list
-  threadlist.free;
-  threadlist:=newlist;
+  //threadlist.free;
+  //threadlist:=newlist;
+  // 更新 threadlist：先 Clear，再逐个 Add
+  threadlist.Clear;  // 清空旧数据
+  for i := 0 to newlist.Count - 1 do
+  begin
+    if newlist[i] <> nil then  // 确保不添加 nil 指针
+      threadlist.Add(newlist[i]);
+  end;
 end;
 
 procedure TThreadPoller.execute;
 begin
   threadlist:=TList.Create;
-  try
-    GetCurrentList(threadlist);
-
-    while not terminated do
-    begin
-
-      sleep(1000);
-      UpdateList;
-    end;
-  finally
-    threadlist.free;
+  GetCurrentList(threadlist);
+ while not terminated do
+  begin
+    sleep(1000);
+    UpdateList;
+    OutputDebugString('BENSON TThreadPoller.execute');
   end;
+
+
+  OutputDebugString('BENSON TThreadPoller.over');
 end;
 
 
@@ -176,12 +175,25 @@ end;
 
 procedure TKernelDebugInterface.injectEvent(e: pointer);
 begin
-  if injectedEvents<>nil then
-  begin
-    injectedEventsCS.Enter;
-    injectedEvents.Push(e);
-    injectedEventsCS.Leave;
+  OutputDebugString('BENSON injectEvent');
+
+
+  try
+    if injectedEvents<>nil then
+    begin
+       injectedEventsCS.Enter;
+       injectedEvents.Push(e);
+       injectedEventsCS.Leave;
+    end;
+
+  except
+    on E: Exception do
+    begin
+      OutputDebugString(PChar('BENSON TKernelDebugInterface.injectEvent Error: ' + E.Message));
+    end;
   end;
+
+  OutputDebugString('BENSON injectEvent Over');
 end;
 
 function TKernelDebugInterface.DebugActiveProcess(dwProcessId: DWORD): WINBOOL;
@@ -209,9 +221,10 @@ begin
     end;
 
     pid:=dwProcessID;
-
+    OutputDebugString('BENSON TThreadPoller.Create');
     threadpoller:=TThreadPoller.Create(true);
     threadpoller.pid:=pid;
+    threadpoller.di:=Self;
 
     tl:=tlist.create;
     try
@@ -251,11 +264,17 @@ begin
 end;
 
 function TKernelDebugInterface.SetThreadContext(hThread: THandle; const lpContext: TContext; isFrozenThread: Boolean=false): BOOL;
+var
+  myContext: TContext;
+  myThread : HANDLE;
 begin
   outputdebugstring('TKernelDebugInterface.SetThreadContext');
   if NeedsToContinue and isFrozenThread then
   begin
+    //myThread := newkernelhandler.OpenThread(THREAD_SUSPEND_RESUME or THREAD_GET_CONTEXT or THREAD_SET_CONTEXT,true,GetThreadId(hThread));
+    //newkernelhandler.SuspendThread(myThread);
     //use the currentdebuggerstate
+    currentdebuggerstate.threadid:=GetThreadId(hThread);
     currentdebuggerstate.eax:=lpContext.{$ifdef cpu64}Rax{$else}eax{$endif};
     currentdebuggerstate.ebx:=lpContext.{$ifdef cpu64}Rbx{$else}ebx{$endif};
     currentdebuggerstate.ecx:=lpContext.{$ifdef cpu64}Rcx{$else}ecx{$endif};
@@ -299,65 +318,165 @@ begin
     {$else}
     CopyMemory(@currentdebuggerstate.fxstate, @lpContext.ext, sizeof(lpContext.ext));
     {$endif}
+    CopyMemory(@myContext, @lpContext, sizeof(lpContext));
+    if DBKDebug_SetDebuggerState(@currentdebuggerstate)then
+    begin
+       //我修改的部分运行完内核更新后直接调用KERNEL设置线程寄存器
+      myContext.{$ifdef cpu64}Rax{$else}eax{$endif}:=currentdebuggerstate.eax;
+      myContext.{$ifdef cpu64}Rbx{$else}ebx{$endif}:=currentdebuggerstate.ebx;
+      myContext.{$ifdef cpu64}Rcx{$else}ecx{$endif}:=currentdebuggerstate.ecx;
+      myContext.{$ifdef cpu64}Rdx{$else}edx{$endif}:=currentdebuggerstate.edx;
+      myContext.{$ifdef cpu64}Rsi{$else}esi{$endif}:=currentdebuggerstate.esi;
+      myContext.{$ifdef cpu64}Rdi{$else}edi{$endif}:=currentdebuggerstate.edi;
+      myContext.{$ifdef cpu64}Rbp{$else}ebp{$endif}:=currentdebuggerstate.ebp;
+      myContext.{$ifdef cpu64}Rsp{$else}esp{$endif}:=currentdebuggerstate.esp;
+      myContext.{$ifdef cpu64}Rip{$else}eip{$endif}:=currentdebuggerstate.eip;
+      {$ifdef cpu64}
+      myContext.r8:=currentdebuggerstate.r8;
+      myContext.r9:=currentdebuggerstate.r9;
+      myContext.r10:=currentdebuggerstate.r10;
+      myContext.r11:=currentdebuggerstate.r11;
+      myContext.r12:=currentdebuggerstate.r12;
+      myContext.r13:=currentdebuggerstate.r13;
+      myContext.r14:=currentdebuggerstate.r14;
+      myContext.r15:=currentdebuggerstate.r15;
+      {$endif}
+      myContext.SegCs:=currentdebuggerstate.cs;
+      myContext.SegSs:=currentdebuggerstate.ss;
+      myContext.SegDs:=currentdebuggerstate.ds;
+      myContext.SegEs:=currentdebuggerstate.es;
+      myContext.SegFs:=currentdebuggerstate.fs;
+      myContext.SegGs:=currentdebuggerstate.gs;
+      myContext.EFlags:=currentdebuggerstate.eflags;
+      myContext.Dr0:=currentdebuggerstate.dr0;
+      myContext.Dr1:=currentdebuggerstate.dr1;
+      myContext.Dr2:=currentdebuggerstate.dr2;
+      myContext.Dr3:=currentdebuggerstate.dr3;
+      myContext.Dr6:=currentdebuggerstate.dr6;
+      myContext.Dr7:=currentdebuggerstate.dr7;
 
-    result:=DBKDebug_SetDebuggerState(@currentdebuggerstate);
 
+      {$ifdef cpu64}
+      CopyMemory(@myContext.FltSave, @currentdebuggerstate.fxstate, 512);
+      {$else}
+      CopyMemory(@myContext.ext, @currentdebuggerstate.fxstate, sizeof(myContext.ext));
+    {$endif}
+    end;
+
+
+
+
+    result:=newkernelhandler.SetThreadContext(hThread, myContext);
+    //newkernelhandler.ResumeThread(myThread);
+    //CloseHandle(myThread);
   end else
     result:=newkernelhandler.SetThreadContext(hthread, lpContext);
 
 end;
 
 function TKernelDebugInterface.GetThreadContext(hThread: THandle; var lpContext: TContext; isFrozenThread: Boolean=false):  BOOL;
+var myThread : HANDLE;
 begin
   outputdebugstring('TKernelDebugInterface.GetThreadContext');
   if NeedsToContinue and isFrozenThread then
   begin
-    outputdebugstring('This is the frozen thread so use the internal method');
-
-    result:=DBKDebug_GetDebuggerState(@currentdebuggerstate);
-
-    //use the currentdebuggerstate
-    lpContext.{$ifdef cpu64}Rax{$else}eax{$endif}:=currentdebuggerstate.eax;
-    lpContext.{$ifdef cpu64}Rbx{$else}ebx{$endif}:=currentdebuggerstate.ebx;
-    lpContext.{$ifdef cpu64}Rcx{$else}ecx{$endif}:=currentdebuggerstate.ecx;
-    lpContext.{$ifdef cpu64}Rdx{$else}edx{$endif}:=currentdebuggerstate.edx;
-    lpContext.{$ifdef cpu64}Rsi{$else}esi{$endif}:=currentdebuggerstate.esi;
-    lpContext.{$ifdef cpu64}Rdi{$else}edi{$endif}:=currentdebuggerstate.edi;
-    lpContext.{$ifdef cpu64}Rbp{$else}ebp{$endif}:=currentdebuggerstate.ebp;
-    lpContext.{$ifdef cpu64}Rsp{$else}esp{$endif}:=currentdebuggerstate.esp;
-    lpContext.{$ifdef cpu64}Rip{$else}eip{$endif}:=currentdebuggerstate.eip;
+    //myThread := newkernelhandler.OpenThread(THREAD_SUSPEND_RESUME or THREAD_GET_CONTEXT or THREAD_SET_CONTEXT,true,GetThreadId(hThread));
+    //newkernelhandler.SuspendThread(myThread);
+    result:=newkernelhandler.GetThreadContext(hThread, lpContext);
+     outputdebugstring('This is the frozen thread so use the internal method'+inttohex(lpContext.Rip,8));
+    //执行内核上下文更新之前，先从系统API获取一下寄存器上下文
+    currentdebuggerstate.threadid:=GetThreadId(hThread);
+    currentdebuggerstate.eax:=lpContext.{$ifdef cpu64}Rax{$else}eax{$endif};
+    currentdebuggerstate.ebx:=lpContext.{$ifdef cpu64}Rbx{$else}ebx{$endif};
+    currentdebuggerstate.ecx:=lpContext.{$ifdef cpu64}Rcx{$else}ecx{$endif};
+    currentdebuggerstate.edx:=lpContext.{$ifdef cpu64}Rdx{$else}edx{$endif};
+    currentdebuggerstate.esi:=lpContext.{$ifdef cpu64}Rsi{$else}esi{$endif};
+    currentdebuggerstate.edi:=lpContext.{$ifdef cpu64}Rdi{$else}edi{$endif};
+    currentdebuggerstate.ebp:=lpContext.{$ifdef cpu64}Rbp{$else}ebp{$endif};
+    currentdebuggerstate.esp:=lpContext.{$ifdef cpu64}Rsp{$else}esp{$endif};
+    currentdebuggerstate.eip:=lpContext.{$ifdef cpu64}Rip{$else}eip{$endif};
     {$ifdef cpu64}
-    lpContext.r8:=currentdebuggerstate.r8;
-    lpContext.r9:=currentdebuggerstate.r9;
-    lpContext.r10:=currentdebuggerstate.r10;
-    lpContext.r11:=currentdebuggerstate.r11;
-    lpContext.r12:=currentdebuggerstate.r12;
-    lpContext.r13:=currentdebuggerstate.r13;
-    lpContext.r14:=currentdebuggerstate.r14;
-    lpContext.r15:=currentdebuggerstate.r15;
+    currentdebuggerstate.r8:=lpContext.r8;
+    currentdebuggerstate.r9:=lpContext.r9;
+    currentdebuggerstate.r10:=lpContext.r10;
+    currentdebuggerstate.r11:=lpContext.r11;
+    currentdebuggerstate.r12:=lpContext.r12;
+    currentdebuggerstate.r13:=lpContext.r13;
+    currentdebuggerstate.r14:=lpContext.r14;
+    currentdebuggerstate.r15:=lpContext.r15;
     {$endif}
-    lpContext.SegCs:=currentdebuggerstate.cs;
-    lpContext.SegSs:=currentdebuggerstate.ss;
-    lpContext.SegDs:=currentdebuggerstate.ds;
-    lpContext.SegEs:=currentdebuggerstate.es;
-    lpContext.SegFs:=currentdebuggerstate.fs;
-    lpContext.SegGs:=currentdebuggerstate.gs;
-    lpContext.EFlags:=currentdebuggerstate.eflags;
-    lpContext.Dr0:=currentdebuggerstate.dr0;
-    lpContext.Dr1:=currentdebuggerstate.dr1;
-    lpContext.Dr2:=currentdebuggerstate.dr2;
-    lpContext.Dr3:=currentdebuggerstate.dr3;
-    lpContext.Dr6:=currentdebuggerstate.dr6;
-    lpContext.Dr7:=currentdebuggerstate.dr7;
+    currentdebuggerstate.cs:=lpContext.SegCs;
+    currentdebuggerstate.ss:=lpContext.SegSs;
+    currentdebuggerstate.ds:=lpContext.SegDs;
+    currentdebuggerstate.es:=lpContext.SegEs;
+    currentdebuggerstate.fs:=lpContext.SegFs;
+    currentdebuggerstate.gs:=lpContext.SegGs;
+    currentdebuggerstate.eflags:=lpContext.EFlags;
+
+    if not globalDebug then
+    begin
+      currentdebuggerstate.dr0:=lpContext.Dr0;
+      currentdebuggerstate.dr1:=lpContext.Dr1;
+      currentdebuggerstate.dr2:=lpContext.Dr2;
+      currentdebuggerstate.dr3:=lpContext.Dr3;
+      currentdebuggerstate.dr6:=lpContext.Dr6;
+      currentdebuggerstate.dr7:=lpContext.Dr7;
+    end;
 
     {$ifdef cpu64}
-    CopyMemory(@lpContext.FltSave, @currentdebuggerstate.fxstate, 512);
+
+    CopyMemory(@currentdebuggerstate.fxstate, @lpContext.FltSave, 512);
     {$else}
-    CopyMemory(@lpContext.ext, @currentdebuggerstate.fxstate, sizeof(lpContext.ext));
+    CopyMemory(@currentdebuggerstate.fxstate, @lpContext.ext, sizeof(lpContext.ext));
     {$endif}
+    if DBKDebug_GetDebuggerState(@currentdebuggerstate) then
+    begin
+         //use the currentdebuggerstate
+      lpContext.{$ifdef cpu64}Rax{$else}eax{$endif}:=currentdebuggerstate.eax;
+      lpContext.{$ifdef cpu64}Rbx{$else}ebx{$endif}:=currentdebuggerstate.ebx;
+      lpContext.{$ifdef cpu64}Rcx{$else}ecx{$endif}:=currentdebuggerstate.ecx;
+      lpContext.{$ifdef cpu64}Rdx{$else}edx{$endif}:=currentdebuggerstate.edx;
+      lpContext.{$ifdef cpu64}Rsi{$else}esi{$endif}:=currentdebuggerstate.esi;
+      lpContext.{$ifdef cpu64}Rdi{$else}edi{$endif}:=currentdebuggerstate.edi;
+      lpContext.{$ifdef cpu64}Rbp{$else}ebp{$endif}:=currentdebuggerstate.ebp;
+      lpContext.{$ifdef cpu64}Rsp{$else}esp{$endif}:=currentdebuggerstate.esp;
+      lpContext.{$ifdef cpu64}Rip{$else}eip{$endif}:=currentdebuggerstate.eip;
+      {$ifdef cpu64}
+      lpContext.r8:=currentdebuggerstate.r8;
+      lpContext.r9:=currentdebuggerstate.r9;
+      lpContext.r10:=currentdebuggerstate.r10;
+      lpContext.r11:=currentdebuggerstate.r11;
+      lpContext.r12:=currentdebuggerstate.r12;
+      lpContext.r13:=currentdebuggerstate.r13;
+      lpContext.r14:=currentdebuggerstate.r14;
+      lpContext.r15:=currentdebuggerstate.r15;
+      {$endif}
+      lpContext.SegCs:=currentdebuggerstate.cs;
+      lpContext.SegSs:=currentdebuggerstate.ss;
+      lpContext.SegDs:=currentdebuggerstate.ds;
+      lpContext.SegEs:=currentdebuggerstate.es;
+      lpContext.SegFs:=currentdebuggerstate.fs;
+      lpContext.SegGs:=currentdebuggerstate.gs;
+      lpContext.EFlags:=currentdebuggerstate.eflags;
+      lpContext.Dr0:=currentdebuggerstate.dr0;
+      lpContext.Dr1:=currentdebuggerstate.dr1;
+      lpContext.Dr2:=currentdebuggerstate.dr2;
+      lpContext.Dr3:=currentdebuggerstate.dr3;
+      lpContext.Dr6:=currentdebuggerstate.dr6;
+      lpContext.Dr7:=currentdebuggerstate.dr7;
+
+      {$ifdef cpu64}
+      CopyMemory(@lpContext.FltSave, @currentdebuggerstate.fxstate, 512);
+      {$else}
+      CopyMemory(@lpContext.ext, @currentdebuggerstate.fxstate, sizeof(lpContext.ext));
+      {$endif}
+    end;
+
+
 
     lpContext.ContextFlags:=0;
-
+    //newkernelhandler.ResumeThread(myThread);
+    //CloseHandle(myThread);
     if currentdebuggerstate.causedbydbvm<>0 then
       log('currentdebuggerstate.causedbydbvm<>0');
   end else
@@ -390,139 +509,106 @@ begin
 end;
 
 function TKernelDebugInterface.ContinueDebugEvent(dwProcessId: DWORD; dwThreadId: DWORD; dwContinueStatus: DWORD): BOOL;
+var myThread : HANDLE;
+    context :TCONTEXT;
+    rflagMask: Cardinal;
 begin
   outputdebugstring('TKernelDebugInterface.ContinueDebugEvent');
-  if currentthread<>0 then
-  begin
-    ResumeThread(currentthread);
-    currentthread:=0;
-  end;
-
   if NeedsToContinue then
   begin
+    myThread := newkernelhandler.OpenThread(THREAD_SUSPEND_RESUME or THREAD_GET_CONTEXT or THREAD_SET_CONTEXT,true,dwThreadId);
+    if dwContinueStatus=DBG_EXCEPTION_NOT_HANDLED then//如果CE没有成功处理异常，就靠我们自己来处理
+    begin
+
+        context.ContextFlags :=  CONTEXT_FULL or CONTEXT_DEBUG_REGISTERS;
+        newkernelhandler.GetThreadContext(myThread,context);
+        currentdebuggerstate.eip:=0;
+        DBKDebug_SetDebuggerState(@currentdebuggerstate);
+        context.Rip:=currentdebuggerstate.eip; //将RIP重新路由到原始位置，并设置RF位=1
+        rflagMask := 1 shl 16;
+        context.EFlags := context.EFlags or rflagMask; //为了让事件继续模拟一个RF交给VT防止阻塞
+        newkernelhandler.SetThreadContext(myThread,context);
+
+    end;
     outputdebugstring('NeedsToContinue=true');
     DBKDebug_SetDebuggerState(@currentdebuggerstate);
     result:=DBKDebug_ContinueDebugEvent(dwContinueStatus=DBG_CONTINUE);
     NeedsToContinue:=false;
+    newkernelhandler.ResumeThread(myThread);
+    CloseHandle(myThread);
   end
   else
   begin
     outputdebugstring('NeedsToContinue=false');
     result:=true;
   end;
-
-
-end;
-
-function TKernelDebugInterface.isInjectedEvent: boolean;
-begin
-  result:=fisInjectedEvent;
 end;
 
 function TKernelDebugInterface.WaitForDebugEvent(var lpDebugEvent: TDebugEvent; dwMilliseconds: DWORD): BOOL;
-var
-  injectedEvent: PInjectedEvent;
-  h: thandle;
+var injectedEvent: PInjectedEvent;
+    myThread : HANDLE;
 begin
   ZeroMemory(@lpDebugEvent, sizeof(TdebugEvent));
-
-  fisInjectedEvent:=false;
-
   injectedEventscs.enter;
   try
-    if injectedEvents.Count>0 then
+  if injectedEvents.Count>0 then
+  begin
+    result:=true;
+    injectedEvent:=injectedEvents.Pop;
+    if injectedEvent<>nil then //just to be sure
     begin
+      lpDebugEvent.dwProcessId:=injectedevent.processid;
+      lpDebugEvent.dwThreadId:=injectedevent.threadid;
 
-
-      result:=true;
-      injectedEvent:=injectedEvents.Pop;
-      if injectedEvent<>nil then //just to be sure
-      begin
-
-        lpDebugEvent.dwProcessId:=injectedevent.processid;
-        lpDebugEvent.dwThreadId:=injectedevent.threadid;
-
-        case injectedevent.eventType of
-          etCreateProcess:
-          begin
-            lpDebugEvent.dwDebugEventCode:=CREATE_PROCESS_DEBUG_EVENT;
-            lpDebugEvent.CreateProcessInfo.hProcess:=processhandle;
-
-            if threads.GetData(lpDebugEvent.dwThreadId,lpDebugEvent.CreateProcessInfo.hThread)=false then
-            begin
-              lpDebugEvent.CreateProcessInfo.hThread:=OpenThread(THREAD_ALL_ACCESS,false, lpDebugEvent.dwThreadId);
-              threads.Add(injectedevent.threadid, lpDebugEvent.CreateProcessInfo.hThread);
-            end;
-
-            if not globalDebug then
-            begin
-              currentthread:=lpDebugEvent.CreateProcessInfo.hThread;
-              SuspendThread(currentthread);
-            end
-            else
-              fisInjectedEvent:=true;
-          end;
-
-          etCreateThread:
-          begin
-            lpDebugEvent.dwDebugEventCode:=CREATE_THREAD_DEBUG_EVENT;
-
-            if threads.GetData(lpDebugEvent.dwthreadid, lpDebugEvent.CreateThread.hThread)=false then
-            begin
-              lpDebugEvent.CreateThread.hThread:=OpenThread(THREAD_ALL_ACCESS,false, lpDebugEvent.dwThreadId);
-              threads.Add(lpDebugEvent.dwThreadId, lpDebugEvent.CreateThread.hThread);
-            end;
-
-            if not globalDebug then
-            begin
-              currentthread:=lpDebugEvent.CreateThread.hThread;
-              SuspendThread(currentthread);
-            end
-            else
-              fisInjectedEvent:=true;
-          end;
-
-          etDestroyThread:
-          begin
-            if threads.GetData(lpDebugEvent.dwthreadid, h) then
-            begin
-              closehandle(h);
-              threads.Delete(lpDebugEvent.dwthreadid);
-            end;
-            lpDebugEvent.dwDebugEventCode:=EXIT_THREAD_DEBUG_EVENT;
-          end;
-
+      case injectedevent.eventType of
+        etCreateProcess:
+        begin
+          lpDebugEvent.dwDebugEventCode:=CREATE_PROCESS_DEBUG_EVENT;
+          lpDebugEvent.CreateProcessInfo.hProcess:=processhandle;
+          lpDebugEvent.CreateProcessInfo.hThread:=OpenThread(THREAD_ALL_ACCESS,false, injectedevent.threadid);
         end;
 
-        NeedsToContinue:=false; //it's not really paused
-        freememandnil(injectedEvent);
+        etCreateThread:
+        begin
+          lpDebugEvent.dwDebugEventCode:=CREATE_THREAD_DEBUG_EVENT;
+          lpDebugEvent.CreateThread.hThread:=OpenThread(THREAD_ALL_ACCESS,false, injectedevent.threadid);
+        end;
+        etDestroyThread: lpDebugEvent.dwDebugEventCode:=EXIT_THREAD_DEBUG_EVENT;
+
       end;
-    end
-    else
-    begin
 
-      NeedsToContinue:=true;
-      result:=DBKDebug_WaitForDebugEvent(dwMilliseconds);
-      if result then
-      begin
-        OutputDebugString('Received a debug event that wasn''t injected');
-
-        //get the state and setup lpDebugEvent
-        DBKDebug_GetDebuggerState(@currentdebuggerstate);
-
-        Log(format('currentdebuggerstate.eip=%8x',[currentdebuggerstate.eip]));
-
-        //this is only a bp hit event
-        lpDebugEvent.dwDebugEventCode:=EXCEPTION_DEBUG_EVENT;
-
-        lpDebugEvent.dwProcessId:=pid;
-        lpDebugEvent.dwThreadId:=currentdebuggerstate.threadid;
-        lpDebugEvent.Exception.dwFirstChance:=1;
-        lpDebugEvent.Exception.ExceptionRecord.ExceptionCode:=EXCEPTION_SINGLE_STEP;
-        lpDebugEvent.Exception.ExceptionRecord.ExceptionAddress:=pointer(ptrUint(currentdebuggerstate.eip));
-      end;
+      NeedsToContinue:=false; //it's not really paused
+      freememandnil(injectedEvent);
     end;
+  end
+  else
+  begin
 
+    NeedsToContinue:=true;
+    result:=DBKDebug_WaitForDebugEvent(dwMilliseconds);
+    if result then
+    begin
+      OutputDebugString('Received a debug event that wasn''t injected');
+      currentdebuggerstate.threadid := 0;
+      currentdebuggerstate.eip := 0;
+      //get the state and setup lpDebugEvent
+      DBKDebug_GetDebuggerState(@currentdebuggerstate);
+
+      Log(format('currentdebuggerstate.eip=%8x',[currentdebuggerstate.eip]));
+
+      //this is only a bp hit event
+      lpDebugEvent.dwDebugEventCode:=EXCEPTION_DEBUG_EVENT;
+
+      lpDebugEvent.dwProcessId:=pid;
+      lpDebugEvent.dwThreadId:=currentdebuggerstate.threadid;
+      myThread := newkernelhandler.OpenThread(THREAD_SUSPEND_RESUME or THREAD_GET_CONTEXT or THREAD_SET_CONTEXT,true,lpDebugEvent.dwThreadId);
+      newkernelhandler.SuspendThread(myThread);
+      CloseHandle(myThread);
+      lpDebugEvent.Exception.dwFirstChance:=1;
+      lpDebugEvent.Exception.ExceptionRecord.ExceptionCode:=EXCEPTION_SINGLE_STEP;
+      lpDebugEvent.Exception.ExceptionRecord.ExceptionAddress:=pointer(ptrUint(currentdebuggerstate.eip));
+    end;
+  end;
   finally
     injectedEventscs.leave;
   end;
@@ -540,20 +626,18 @@ end;
 
 destructor TKernelDebugInterface.destroy;
 begin
+  OutputDebugString('BENSON TKernelDebugInterface.destroy');
   if injectedEvents<>nil then
     injectedEvents.free;
-
-  if threadpoller<>nil then
-    threadpoller.free;
 
   if injectedEventsCS<>nil then
     injectedEventsCS.free;
 
+  if threadpoller<>nil then
+    threadpoller.free;
+
   if pid<>0 then
     DBKDebug_StopDebugging;
-
-  if threads<>nil then
-    threads.free;
 
   inherited destroy;
 end;
@@ -561,7 +645,6 @@ end;
 constructor TKernelDebugInterface.create(globalDebug, canStepKernelcode: boolean);
 begin
   inherited create;
-  threads:=tmap.Create(ituPtrSize,sizeof(THandle));
 
   self.globalDebug:=globalDebug;
 
@@ -577,7 +660,6 @@ begin
   DBKDebug_SetGlobalDebugState(globalDebug);
   injectedEvents:=TQueue.Create;
   injectedEventsCS:=TcriticalSection.create;
-
   fDebuggerCapabilities:=fDebuggerCapabilities+[dbcHardwareBreakpoint, dbcDBVMBreakpoint];
   name:='Kernelmode Debugger';
 

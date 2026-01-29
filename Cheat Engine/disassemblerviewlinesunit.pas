@@ -991,8 +991,8 @@ begin
 
   DrawTextRectWithColor(rect(fHeaders.Items[2].Left, linestart, fHeaders.Items[2].Right, linestart+height),i,linestart, parameterstring);
   fInstructionCenter:=linestart+(fcanvas.TextHeight(opcodestring) div 2);
-
-  if specialstrings.Count>0 then
+  //判断字符串指针地址是否与原数组相等，相等证明没有更改，则按原方案渲染 if @pspecialstring[1] <> @specialstring[1] then
+  if specialstrings.Count>0 then 
   begin
     for i:=0 to specialstrings.Count-1 do
     begin

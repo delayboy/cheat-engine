@@ -1267,7 +1267,21 @@ var
     rewrite: tstringlist;
 
 begin
+  // same as menu option "Cheat Engine framework code", make sure we
+  // have enable and disable
+  getenableanddisablepos(script,enablepos,disablepos);
 
+  if enablepos=-1 then //-2 is 2 or more, so bugged, and >=0 is has one
+  begin
+    script.Insert(0,'[ENABLE]');
+    script.Insert(1,'');
+  end;
+
+  if disablepos=-1 then
+  begin
+    script.Add('[DISABLE]');
+    script.Add('');
+  end;
   if not processhandler.is64Bit then
     farjmp:=false;
 
@@ -1309,20 +1323,30 @@ begin
     with enablecode do
     begin
       if processhandler.is64bit and (not farjmp) then
-        add('alloc(newmem'+inttostr(injectnr)+',2048,'+addressstring+') ')
+        add('alloc(newmem'+inttostr(injectnr)+',256,'+addressstring+') ')
       else
-        add('alloc(newmem'+inttostr(injectnr)+',2048)');
+        add('alloc(newmem'+inttostr(injectnr)+',256)');
       add('label(returnhere'+inttostr(injectnr)+')');
       add('label(originalcode'+inttostr(injectnr)+')');
       add('label(exit'+inttostr(injectnr)+')');
+      add('label(data_addr'+IntToHex(a,4)+')');
       add('');
       add('newmem'+inttostr(injectnr)+': //'+rsAADescribeAllocatedMemory);
-      add('//'+rsPlaceYourCodeHere);
+      add('data_addr'+IntToHex(a,4)+':');
+      if processhandler.is64bit then add('dq 0') else add('dd 0');
 
       add('');
       add('originalcode'+inttostr(injectnr)+':');
       for i:=0 to originalcode.Count-1 do
         add(originalcode[i]);
+      
+      
+      add('//'+rsPlaceYourCodeHere);
+      if processhandler.is64bit then
+         add('mov qword ptr [data_addr'+IntToHex(a,4)+'],rcx')
+      else
+          add('mov dword ptr [data_addr'+IntToHex(a,4)+'],ecx');
+
       add('');
       add('exit'+inttostr(injectnr)+':');
       add('jmp returnhere'+inttostr(injectnr)+'');
@@ -1334,9 +1358,9 @@ begin
       else
       begin
         if farjmp then
-          add('jmp far newmem'+inttostr(injectnr)+'')
+          add('jmp far originalcode'+inttostr(injectnr)+'')
         else
-          add('jmp newmem'+inttostr(injectnr)+'');
+          add('jmp originalcode'+inttostr(injectnr)+'');
       end;
 
       if codesize>jmpsize then
@@ -1349,6 +1373,7 @@ begin
 
       add('returnhere'+inttostr(injectnr)+':');
       add('');
+       add('registersymbol(data_addr'+IntToHex(a,4)+')');
     end;
 
     with disablecode do
@@ -1358,11 +1383,12 @@ begin
       x:='db';
       for i:=0 to length(originalbytes)-1 do
         x:=x+' '+inttohex(originalbytes[i],2);
-      add(x);
+      add(x);  //add('//Alt: '+x);
+      add('unregistersymbol(data_addr'+IntToHex(a,4)+')');
 
       for i:=0 to originalcode.count-1 do
       begin
-        add('//'+originalcode[i]);
+        add('//'+originalcode[i]);  // add(originalcode[i]);
       end;
 
     end;

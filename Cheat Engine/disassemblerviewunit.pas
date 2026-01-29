@@ -350,7 +350,7 @@ begin
   begin
     //in range
     found:=false;
-    for i:=0 to fTotalvisibledisassemblerlines-1 do
+    for i:=0 to fTotalvisibledisassemblerlines-1 do //渲染跳转线
       if address=Tdisassemblerline(disassemblerlines[i]).address then
       begin
         found:=true;
@@ -1521,7 +1521,7 @@ begin
 
   disassemblerlines:=TList.Create;
 
-  fShowjumplineState:=jlsOnlyWithinRange;
+  fShowjumplineState:=jlsAll;//jlsOnlyWithinRange;
   fShowJumplines:=true;
 
   self.OnMouseWheel:=mousescroll;

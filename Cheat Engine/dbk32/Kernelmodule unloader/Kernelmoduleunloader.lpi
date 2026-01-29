@@ -5,6 +5,9 @@
     <PathDelim Value="\"/>
     <General>
       <Flags>
+        <MainUnitHasCreateFormStatements Value="False"/>
+        <MainUnitHasTitleStatement Value="False"/>
+        <MainUnitHasScaledStatement Value="False"/>
         <CompatibilityMode Value="True"/>
       </Flags>
       <ResourceType Value="res"/>
@@ -38,8 +41,8 @@
         <IsPartOfProject Value="True"/>
         <IsVisibleTab Value="True"/>
         <EditorIndex Value="1"/>
-        <TopLine Value="294"/>
-        <CursorPos X="29" Y="306"/>
+        <TopLine Value="491"/>
+        <CursorPos X="17" Y="496"/>
         <UsageCount Value="20"/>
         <Loaded Value="True"/>
       </Unit0>
@@ -52,30 +55,27 @@
       </Unit1>
       <Unit2>
         <Filename Value="C:\lazarus164\fpc\3.0.2\source\rtl\objpas\sysutils\filutilh.inc"/>
-        <EditorIndex Value="3"/>
+        <EditorIndex Value="-1"/>
         <TopLine Value="151"/>
         <CursorPos X="11" Y="171"/>
         <UsageCount Value="10"/>
-        <Loaded Value="True"/>
       </Unit2>
       <Unit3>
         <Filename Value="C:\lazarus164\fpc\3.0.2\source\rtl\win\sysutils.pp"/>
-        <EditorIndex Value="4"/>
+        <EditorIndex Value="-1"/>
         <TopLine Value="350"/>
         <CursorPos X="3" Y="352"/>
         <UsageCount Value="10"/>
-        <Loaded Value="True"/>
       </Unit3>
       <Unit4>
         <Filename Value="C:\development\fpc\rtl\inc\astrings.inc"/>
-        <EditorIndex Value="2"/>
+        <EditorIndex Value="-1"/>
         <TopLine Value="197"/>
         <CursorPos Y="215"/>
         <UsageCount Value="10"/>
-        <Loaded Value="True"/>
       </Unit4>
     </Units>
-    <JumpHistory Count="29" HistoryIndex="28">
+    <JumpHistory Count="30" HistoryIndex="29">
       <Position1>
         <Filename Value="Kernelmoduleunloader.lpr"/>
         <Caret Line="228" TopLine="210"/>
@@ -192,6 +192,10 @@
         <Filename Value="Kernelmoduleunloader.lpr"/>
         <Caret Line="333" TopLine="305"/>
       </Position29>
+      <Position30>
+        <Filename Value="Kernelmoduleunloader.lpr"/>
+        <Caret Line="515" Column="43" TopLine="506"/>
+      </Position30>
     </JumpHistory>
   </ProjectOptions>
   <CompilerOptions>
@@ -204,8 +208,8 @@
       <IncludeFiles Value="$(ProjOutDir)"/>
     </SearchPaths>
     <CodeGeneration>
-      <TargetCPU Value="i386"/>
-      <TargetOS Value="win32"/>
+      <TargetCPU Value="x86_64"/>
+      <TargetOS Value="win64"/>
     </CodeGeneration>
     <Linking>
       <Debugging>
