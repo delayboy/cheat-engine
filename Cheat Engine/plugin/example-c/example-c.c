@@ -119,6 +119,24 @@ DWORD __stdcall suspend_resume_switch_peThread(LPVOID lp) {
 	free(aim_dll);
 	return 1;
 }
+int trick_suspend_aim_dll(DWORD processId) {
+	InitConsoleWindow(true);
+	luaOpenProcess(processId);
+	Sleep(1000);
+	char* aimChar = getDynamicChars(luaGetSettings_Value(luaGetSettings(NULL), "Trick suspend target dll"));
+	const char* aim_dll = luaInputQuery("Warning", "Sorry, this debbugger not support suspend loading please input the aim dll for trick loading if the result is '' we will do nothing", aimChar);//使用VT调试器则不连接进程
+	free(aimChar);
+	luaOpenProcess(processId);
+	if (aim_dll == NULL) return 1;
+	else if (strcmp(aim_dll, "") == 0) {
+		luaSetSettings_Value(luaGetSettings(NULL), "Trick suspend target dll", NULL);
+		return 1;
+	}
+	luaSetSettings_Value(luaGetSettings(NULL), "Trick suspend target dll", aim_dll);
+	SuspendResumeProcessThreads(processId, 0);//一定要先恢复挂起进程，否则程序会永远卡死（因为挂起了两次，恢复计数器永远不归零） 	
+	CreateThread(NULL, 0, suspend_resume_switch_peThread, (LPVOID)getDynamicChars(aim_dll), 0, NULL);
+	return 1;
+}
 DWORD __stdcall suspendloadpeThread(LPVOID lp) {
 	
 	char filePath[MAX_PATH];
@@ -178,23 +196,8 @@ DWORD __stdcall suspendloadpeThread(LPVOID lp) {
 
 
 	if (debbugerType == DBVMdebug || debbugerType == Kerneldebug || (launcher != NULL && launcher->isReady())) {//如果存在驱动则使用阻塞加载法
-		InitConsoleWindow(true);
-		Sleep(1000);
-		char* aimChar = getDynamicChars(luaGetSettings_Value(luaGetSettings(NULL), "Trick suspend target dll"));
-		const char* aim_dll=luaInputQuery("Warning", "Sorry, this debbugger not support suspend loading please input the aim dll for trick loading if the result is '' we will do nothing", aimChar);//使用VT调试器则不连接进程
-		free(aimChar);
-		luaOpenProcess(proinfo.dwProcessId);
-		if (aim_dll == NULL) return 1;
-		else if (strcmp(aim_dll,"")==0) {
-			luaSetSettings_Value(luaGetSettings(NULL), "Trick suspend target dll", NULL);
-			return 1;
-		}
-		luaSetSettings_Value(luaGetSettings(NULL), "Trick suspend target dll", aim_dll);
-		//挂起进程恢复
-		ResumeThread(proinfo.hThread);
-		CreateThread(NULL, 0, suspend_resume_switch_peThread, (LPVOID)getDynamicChars(aim_dll), 0, NULL);
 		
-		return 1;
+		return trick_suspend_aim_dll(proinfo.dwProcessId);
 	}
 
 	//加载CE调试器
@@ -516,6 +519,11 @@ BOOL __stdcall suspend_memorybrowserplugin(UINT_PTR* disassembleraddress, UINT_P
 	return TRUE;
 }
 
+BOOL __stdcall trick_suspend_dll_memorybrowserplugin(UINT_PTR* disassembleraddress, UINT_PTR* selected_disassembler_address, UINT_PTR* hexviewaddress)
+{
+	trick_suspend_aim_dll(*Exported.OpenedProcessID);
+	return TRUE;
+}
 BOOL __stdcall disassemblerContextSelectCopyPopup(UINT_PTR selectedAddress, char** addressofname, BOOL* show)
 {
 	*addressofname = "Copy Plugin";
@@ -689,6 +697,7 @@ BOOL __stdcall CEPlugin_InitializePlugin(PExportedFunctions ef, int pluginid)
 	_PLUGINTYPE8_INIT init8;
 	MEMORYVIEWPLUGIN_INIT suspendAllThreadInit;
 	MEMORYVIEWPLUGIN_INIT resumeAllThreadInit;
+	MEMORYVIEWPLUGIN_INIT trickSuspendAimDllInit;
 	selfid = pluginid;
 	StartTcpServer(5151, CE_Lua_TcpCallback);
 
@@ -734,6 +743,16 @@ BOOL __stdcall CEPlugin_InitializePlugin(PExportedFunctions ef, int pluginid)
 	suspendAllThreadInit.callbackroutine = suspend_memorybrowserplugin;
 	suspendAllThreadInit.shortcut = NULL;
 	memorybrowserpluginid = Exported.RegisterFunction(pluginid, ptMemoryView, &suspendAllThreadInit); //adds a plugin menu item to the memory view
+	if (memorybrowserpluginid == -1)
+	{
+		Exported.ShowMessage("Failure to register the memoryview plugin");
+		return FALSE;
+	}
+
+	trickSuspendAimDllInit.name = "Trick suspend target dll";
+	trickSuspendAimDllInit.callbackroutine = trick_suspend_dll_memorybrowserplugin;
+	trickSuspendAimDllInit.shortcut = NULL;
+	memorybrowserpluginid = Exported.RegisterFunction(pluginid, ptMemoryView, &trickSuspendAimDllInit); //adds a plugin menu item to the memory view
 	if (memorybrowserpluginid == -1)
 	{
 		Exported.ShowMessage("Failure to register the memoryview plugin");

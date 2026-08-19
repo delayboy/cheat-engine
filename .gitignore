@@ -8,3 +8,6 @@ Cheat Engine/cheatengine.lps
 Cheat Engine/cheatengine.res
 *.obj
 *.pdb
+/Cheat Engine/plugin/example-c/x64
+Cheat Engine/plugin/example-c/.vs/example-c/v16/Browse.VC.db
+/Cheat Engine/plugin/example-c/.vs/example-c/v16/ipch
